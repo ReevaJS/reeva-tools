@@ -140,7 +140,17 @@ class CompilerTest {
     fun complexFieldAssignment() {
         compiledTestHelper(
             """
-            fun test(block: (Int, String) -> Unit) {
+            import me.mattco.reeva.runtime.annotations.JSMethod
+            import me.mattco.reeva.runtime.objects.JSObject
+            import me.mattco.reeva.runtime.JSValue
+            
+            class JSThing : JSObject() {
+            @JSMethod("someMethod", 3, 0b101)
+            fun jsMethod(args: List<JSValue>): JSValue { return this }
+            }
+            
+            fun main() {
+                JSThing().annotationInit()
             }
             """
         )
