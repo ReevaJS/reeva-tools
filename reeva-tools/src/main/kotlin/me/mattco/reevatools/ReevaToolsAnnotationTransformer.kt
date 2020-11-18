@@ -17,8 +17,7 @@ import org.jetbrains.kotlin.ir.declarations.IrClass
 import org.jetbrains.kotlin.ir.declarations.IrFile
 import org.jetbrains.kotlin.ir.declarations.IrSimpleFunction
 import org.jetbrains.kotlin.ir.declarations.IrValueParameter
-import org.jetbrains.kotlin.ir.expressions.IrConstructorCall
-import org.jetbrains.kotlin.ir.expressions.IrStatementOrigin
+import org.jetbrains.kotlin.ir.expressions.*
 import org.jetbrains.kotlin.ir.expressions.impl.IrFunctionReferenceImpl
 import org.jetbrains.kotlin.ir.types.createType
 import org.jetbrains.kotlin.ir.types.defaultType
@@ -40,13 +39,12 @@ class ReevaToolsAnnotationTransformer(
     private val propertyKeySymbol = context.referenceClass(FqName("me.mattco.reeva.runtime.objects.PropertyKey"))!!
     private val jsValueSymbol = context.referenceClass(FqName("me.mattco.reeva.runtime.JSValue"))!!
     private val jsObjectSymbol = context.referenceClass(FqName("me.mattco.reeva.runtime.objects.JSObject"))!!
+    private val jsSymbolSymbol = context.referenceClass(FqName("me.mattco.reeva.runtime.primitives.JSSymbol"))!!
+    private val realmCompanionSymbol = context.referenceClass(FqName("me.mattco.reeva.core.Realm"))!!.owner.companionObject() as IrClass
     private val listSymbol = context.referenceClass(FqName("kotlin.collections.List"))!!
     private val defineNativeFunctionSymbol = jsObjectSymbol.functions.first { it.owner.name == Name.identifier("defineNativeFunction") }
 
     override fun lower(irFile: IrFile) {
-        println("\n\n===============")
-        println(ir2stringWhole(irFile))
-        println("\n\n===============")
         irFile.transformChildrenVoid()
         println(ir2stringWhole(irFile))
         println("\n\n===============")
@@ -100,14 +98,8 @@ class ReevaToolsAnnotationTransformer(
     ).apply {
         dispatchReceiver = irGet(dispatchReceiverParameter)
 
-        putValueArgument(0, irCallConstructor(propertyKeySymbol.constructors.first {
-            it.owner.valueParameters.size == 1 && it.owner.valueParameters.first().type == context.irBuiltIns.stringType
-        }, listOf()).apply {
-            putValueArgument(0, ann.getValueArgument(0))
-        })
-
+        putValueArgument(0, getPropertyKeyTarget(ann.getValueArgument(0)!!))
         putValueArgument(1, ann.getValueArgument(1))
-
         putValueArgument(2, ann.getValueArgument(2) ?: irInt(0b111111))
 
         putValueArgument(3, IrFunctionReferenceImpl(
@@ -132,5 +124,30 @@ class ReevaToolsAnnotationTransformer(
         ).apply {
             this.dispatchReceiver = irGet(dispatchReceiverParameter)
         })
+    }
+
+    private fun IrBuilderWithScope.getPropertyKeyTarget(input: IrExpression): IrExpression {
+        if (input !is IrConst<*> || input.kind != IrConstKind.String)
+            TODO()
+
+        val name = input.value as String
+        var isSymbol = false
+        val expr = if (name.startsWith("@@")) {
+            val symbolProperty = realmCompanionSymbol.properties.firstOrNull {
+                it.name.identifier == name
+            } ?: TODO()
+            isSymbol = true
+            irGet(symbolProperty.getter!!.returnType, irGetObject(realmCompanionSymbol.symbol), symbolProperty.getter!!.symbol)
+        } else input
+
+        val ctor = propertyKeySymbol.constructors.first {
+            it.owner.valueParameters.size == 1 && it.owner.valueParameters.first().type.getClass()?.name?.identifier?.equals(
+                if (isSymbol) "JSSymbol" else "String"
+            ) == true
+        }
+
+        return irCallConstructor(ctor, listOf()).apply {
+            putValueArgument(0, expr)
+        }
     }
 }
