@@ -4,6 +4,7 @@ import com.tschuchort.compiletesting.KotlinCompilation
 import com.tschuchort.compiletesting.SourceFile
 import org.intellij.lang.annotations.Language
 import org.junit.Test
+import java.io.File
 import java.lang.reflect.InvocationTargetException
 import kotlin.test.assertEquals
 import kotlin.test.fail
@@ -143,13 +144,20 @@ class CompilerTest {
             import me.mattco.reeva.runtime.annotations.JSMethod
             import me.mattco.reeva.runtime.objects.JSObject
             import me.mattco.reeva.runtime.JSValue
+            import me.mattco.reeva.runtime.objects.PropertyKey
             
             class JSThing : JSObject() {
             @JSMethod("someMethod", 3, 0b101)
-            fun jsMethod(args: List<JSValue>): JSValue { return this }
+            fun jsMethod(thisValue: JSValue, args: List<JSValue>): JSValue { return this }
+            
+            fun xxx() {
+                defineNativeFunction(PropertyKey("someMethod"), 3, 5, ::jsMethod)
+            }
             }
             
             fun main() {
+                val x = { y: List<JSValue> -> JSThing() }
+                val z = JSThing::jsMethod
                 JSThing().annotationInit()
             }
             """
@@ -167,6 +175,7 @@ fun compiledTestHelper(@Language("kotlin") source: String) {
     }.compile()
 
     assertEquals(KotlinCompilation.ExitCode.OK, result.exitCode)
+    result.outputDirectory.copyRecursively(File("classes"))
 
     val kClazz = result.classLoader.loadClass("MainKt")
     val main = kClazz.declaredMethods.single { it.name == "main" && it.parameterCount == 0 }

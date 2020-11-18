@@ -6,59 +6,42 @@ import org.jetbrains.kotlin.backend.common.extensions.IrPluginContext
 import org.jetbrains.kotlin.backend.common.ir.ir2stringWhole
 import org.jetbrains.kotlin.backend.common.lower.DeclarationIrBuilder
 import org.jetbrains.kotlin.backend.common.lower.at
-import org.jetbrains.kotlin.builtins.createFunctionType
 import org.jetbrains.kotlin.descriptors.Modality
 import org.jetbrains.kotlin.descriptors.annotations.Annotations
 import org.jetbrains.kotlin.ir.IrStatement
 import org.jetbrains.kotlin.ir.UNDEFINED_OFFSET
 import org.jetbrains.kotlin.ir.builders.*
+import org.jetbrains.kotlin.ir.builders.declarations.addDispatchReceiver
 import org.jetbrains.kotlin.ir.builders.declarations.buildFun
 import org.jetbrains.kotlin.ir.declarations.IrClass
 import org.jetbrains.kotlin.ir.declarations.IrFile
 import org.jetbrains.kotlin.ir.declarations.IrSimpleFunction
+import org.jetbrains.kotlin.ir.declarations.IrValueParameter
 import org.jetbrains.kotlin.ir.expressions.IrConstructorCall
 import org.jetbrains.kotlin.ir.expressions.IrStatementOrigin
 import org.jetbrains.kotlin.ir.expressions.impl.IrFunctionReferenceImpl
+import org.jetbrains.kotlin.ir.types.createType
 import org.jetbrains.kotlin.ir.types.defaultType
 import org.jetbrains.kotlin.ir.types.getClass
+import org.jetbrains.kotlin.ir.types.impl.IrSimpleTypeBuilder
+import org.jetbrains.kotlin.ir.types.impl.buildSimpleType
+import org.jetbrains.kotlin.ir.types.impl.makeTypeProjection
 import org.jetbrains.kotlin.ir.types.toKotlinType
-import org.jetbrains.kotlin.ir.util.constructors
-import org.jetbrains.kotlin.ir.util.defaultType
-import org.jetbrains.kotlin.ir.util.functions
+import org.jetbrains.kotlin.ir.util.*
 import org.jetbrains.kotlin.name.FqName
 import org.jetbrains.kotlin.name.Name
 import org.jetbrains.kotlin.types.KotlinTypeFactory
+import org.jetbrains.kotlin.types.Variance
 import org.jetbrains.kotlin.types.typeUtil.asTypeProjection
 
 class ReevaToolsAnnotationTransformer(
     private val context: IrPluginContext
 ) : IrElementTransformerVoidWithContext(), FileLoweringPass {
-//    private val defineNativeFunctionSymbol = context.referenceFunctions(FqName("me.mattco.reeva.runtime.objects.JSObject.defineNativeFunction"))
-//        .first()
-//    private val defineNativeAccessorSymbol = context.referenceFunctions(FqName("me.mattco.reeva.runtime.objects.JSObject.defineNativeAccessor"))
-//        .first()
-//    private val defineNativePropertySymbol = context.referenceFunctions(FqName("me.mattco.reeva.runtime.objects.JSObject.defineNativeProperty"))
-//        .first()
-
     private val propertyKeySymbol = context.referenceClass(FqName("me.mattco.reeva.runtime.objects.PropertyKey"))!!
     private val jsValueSymbol = context.referenceClass(FqName("me.mattco.reeva.runtime.JSValue"))!!
     private val jsObjectSymbol = context.referenceClass(FqName("me.mattco.reeva.runtime.objects.JSObject"))!!
+    private val listSymbol = context.referenceClass(FqName("kotlin.collections.List"))!!
     private val defineNativeFunctionSymbol = jsObjectSymbol.functions.first { it.owner.name == Name.identifier("defineNativeFunction") }
-
-//    private val nativeFunctionType = createFunctionType(
-//        context.builtIns,
-//        Annotations.EMPTY,
-//        null,
-//        listOf(
-//            KotlinTypeFactory.simpleNotNullType(
-//                Annotations.EMPTY,
-//                context.builtIns.list,
-//                listOf(jsValueSymbol.owner.defaultType.toKotlinType().asTypeProjection())
-//            )
-//        ),
-//        listOf(Name.identifier("thisValue"), Name.identifier("arguments")),
-//        jsValueSymbol.owner.defaultType.toKotlinType()
-//    )
 
     override fun lower(irFile: IrFile) {
         println("\n\n===============")
@@ -70,21 +53,28 @@ class ReevaToolsAnnotationTransformer(
     }
 
     override fun visitClassNew(declaration: IrClass): IrStatement {
-        val funObject = declaration.functions.find { it.name == Name.identifier("annotationInit") } ?: buildFun {
+        val funObject = buildFun {
             name = Name.identifier("annotationInit")
             returnType = context.irBuiltIns.unitType
             modality = Modality.OPEN
-        }.also { declaration.declarations.add(it) }
+        }.also {
+            declaration.declarations.removeIf { func -> func is IrSimpleFunction && func.name == it.name }
+            declaration.declarations.add(it)
+        }
 
         funObject.apply {
             parent = declaration
+            addDispatchReceiver {
+                name = declaration.name
+                type = declaration.defaultType
+            }
 
             body = DeclarationIrBuilder(context, currentScope!!.scope.scopeOwnerSymbol).run {
                 at(declaration)
 
                 irBlockBody {
                     declaration.functionsWithAnnoName("JSMethod").forEach { (function, ann) ->
-                        +buildDefineNativeFunctionCall(function, ann)
+                        +buildDefineNativeFunctionCall(function, ann, funObject.dispatchReceiverParameter!!)
                     }
                 }
             }
@@ -102,14 +92,17 @@ class ReevaToolsAnnotationTransformer(
 
     private fun IrBuilderWithScope.buildDefineNativeFunctionCall(
         targetFunction: IrSimpleFunction,
-        ann: IrConstructorCall
+        ann: IrConstructorCall,
+        dispatchReceiverParameter: IrValueParameter
     ) = irCall(
         defineNativeFunctionSymbol,
         context.irBuiltIns.unitType
     ).apply {
+        dispatchReceiver = irGet(dispatchReceiverParameter)
+
         putValueArgument(0, irCallConstructor(propertyKeySymbol.constructors.first {
             it.owner.valueParameters.size == 1 && it.owner.valueParameters.first().type == context.irBuiltIns.stringType
-        }, listOf(context.irBuiltIns.stringType)).apply {
+        }, listOf()).apply {
             putValueArgument(0, ann.getValueArgument(0))
         })
 
@@ -119,11 +112,25 @@ class ReevaToolsAnnotationTransformer(
 
         putValueArgument(3, IrFunctionReferenceImpl(
             UNDEFINED_OFFSET, UNDEFINED_OFFSET,
-            jsValueSymbol.defaultType,
+            context.irBuiltIns.kFunction(2).createType(false, listOf(
+                makeTypeProjection(jsValueSymbol.defaultType, Variance.INVARIANT),
+                makeTypeProjection(IrSimpleTypeBuilder().run {
+                    classifier = listSymbol
+                    kotlinType = KotlinTypeFactory.simpleNotNullType(
+                        Annotations.EMPTY,
+                        context.builtIns.list,
+                        listOf(jsValueSymbol.defaultType.toKotlinType().asTypeProjection())
+                    )
+                    buildSimpleType()
+                }, Variance.INVARIANT),
+                makeTypeProjection(jsValueSymbol.defaultType, Variance.INVARIANT)
+            )),
             targetFunction.symbol,
             typeArgumentsCount = 0,
             reflectionTarget = null,
             origin = IrStatementOrigin.ADAPTED_FUNCTION_REFERENCE
-        ))
+        ).apply {
+            this.dispatchReceiver = irGet(dispatchReceiverParameter)
+        })
     }
 }
