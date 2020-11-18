@@ -20,10 +20,139 @@ class CompilerTest {
             import me.mattco.reeva.runtime.objects.PropertyKey
             
             class JSThing : JSObject() {
-                @JSMethod("@@toStringTag", 3, 0b101)
-                fun jsMethod(thisValue: JSValue, args: List<JSValue>): JSValue { 
+                @JSMethod("toStringTag", 3, 6)
+                fun jsMethodWithStrName(thisValue: JSValue, args: List<JSValue>): JSValue { 
                     return this 
                 }
+                
+                @JSMethod("@@toStringTag", 3, 6)
+                fun jsMethodWithSymbolName(thisValue: JSValue, args: List<JSValue>): JSValue { 
+                    return this 
+                }
+            }
+            
+            fun main() {
+                JSThing().annotationInit()
+            }
+            """
+        )
+    }
+
+    @Test
+    fun `@JSNativeProperty{Getter,Setter} generation`() {
+        compiledTestHelper(
+            """
+            import me.mattco.reeva.runtime.annotations.JSNativePropertyGetter
+            import me.mattco.reeva.runtime.annotations.JSNativePropertySetter
+            import me.mattco.reeva.runtime.objects.JSObject
+            import me.mattco.reeva.runtime.JSValue
+            import me.mattco.reeva.runtime.objects.PropertyKey
+            
+            class JSThing : JSObject() {
+                @JSNativePropertyGetter("length", 10)
+                fun getLength(thisValue: JSValue): JSValue {
+                    return this
+                }
+                
+                @JSNativePropertySetter("length", 4)
+                fun setLength(thisValue: JSValue, newValue: JSValue) {
+                    
+                }
+                @JSNativePropertyGetter("@@toStringTag", 10)
+                fun `get@@toStringTag`(thisValue: JSValue): JSValue {
+                    return this
+                }
+                
+                @JSNativePropertySetter("@@toStringTag", 4)
+                fun `set@@toStringTag`(thisValue: JSValue, newValue: JSValue) {
+                    
+                }
+            }
+            
+            fun main() {
+                JSThing().annotationInit()
+            }
+            """
+        )
+    }
+
+    @Test
+    fun `@JSNativeAccessor{Getter,Setter} generation`() {
+        compiledTestHelper(
+            """
+            import me.mattco.reeva.runtime.annotations.JSNativeAccessorGetter
+            import me.mattco.reeva.runtime.annotations.JSNativeAccessorSetter
+            import me.mattco.reeva.runtime.objects.JSObject
+            import me.mattco.reeva.runtime.JSValue
+            import me.mattco.reeva.runtime.objects.PropertyKey
+            
+            class JSThing : JSObject() {
+                @JSNativeAccessorGetter("length", 10)
+                fun getLength(thisValue: JSValue): JSValue {
+                    return this
+                }
+                
+                @JSNativeAccessorSetter("length", 4)
+                fun setLength(thisValue: JSValue, newValue: JSValue) {
+                    
+                }
+                
+                @JSNativeAccessorGetter("@@toStringTag", 10)
+                fun `get@@toStringTag`(thisValue: JSValue): JSValue {
+                    return this
+                }
+                
+                @JSNativeAccessorSetter("@@toStringTag", 4)
+                fun `set@@toStringTag`(thisValue: JSValue, newValue: JSValue) {
+                    
+                }       
+            }
+            
+            fun main() {
+                JSThing().annotationInit()
+            }
+            """
+        )
+    }
+
+    @Test
+    fun `non-constant attributes`() {
+        compiledTestHelper(
+            """
+            import me.mattco.reeva.runtime.annotations.JSMethod
+            import me.mattco.reeva.runtime.annotations.JSNativePropertyGetter
+            import me.mattco.reeva.runtime.annotations.JSNativePropertySetter
+            import me.mattco.reeva.runtime.annotations.JSNativeAccessorGetter
+            import me.mattco.reeva.runtime.annotations.JSNativeAccessorSetter
+            import me.mattco.reeva.runtime.objects.JSObject
+            import me.mattco.reeva.runtime.JSValue
+            import me.mattco.reeva.runtime.objects.PropertyKey
+            
+            class JSThing : JSObject() {
+                @JSMethod("a", 3, JSObject.ATTRIBUTE)
+                fun jsMethodWithStrName(thisValue: JSValue, args: List<JSValue>): JSValue { 
+                    return this 
+                }
+                
+                @JSNativePropertyGetter("b", JSObject.ATTRIBUTE)
+                fun getB(thisValue: JSValue): JSValue {
+                    return this
+                }
+                
+                @JSNativePropertySetter("b", JSObject.ATTRIBUTE)
+                fun setB(thisValue: JSValue, newValue: JSValue) {
+                    
+                }
+                
+                @JSNativeAccessorGetter("c", JSObject.ATTRIBUTE)
+                fun getC(thisValue: JSValue): JSValue {
+                    return this
+                }
+                
+                @JSNativeAccessorSetter("c", JSObject.ATTRIBUTE)
+                fun setC(thisValue: JSValue, newValue: JSValue) {
+                    
+                }   
             }
             
             fun main() {
@@ -44,7 +173,7 @@ fun compiledTestHelper(@Language("kotlin") source: String) {
     }.compile()
 
     assertEquals(KotlinCompilation.ExitCode.OK, result.exitCode)
-    result.outputDirectory.copyRecursively(File("classes"))
+//    result.outputDirectory.copyRecursively(File("classes"))
 
     val kClazz = result.classLoader.loadClass("MainKt")
     val main = kClazz.declaredMethods.single { it.name == "main" && it.parameterCount == 0 }

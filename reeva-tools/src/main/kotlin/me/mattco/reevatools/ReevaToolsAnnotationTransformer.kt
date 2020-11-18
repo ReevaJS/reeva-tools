@@ -3,7 +3,6 @@ package me.mattco.reevatools
 import org.jetbrains.kotlin.backend.common.FileLoweringPass
 import org.jetbrains.kotlin.backend.common.IrElementTransformerVoidWithContext
 import org.jetbrains.kotlin.backend.common.extensions.IrPluginContext
-import org.jetbrains.kotlin.backend.common.ir.ir2stringWhole
 import org.jetbrains.kotlin.backend.common.lower.DeclarationIrBuilder
 import org.jetbrains.kotlin.backend.common.lower.at
 import org.jetbrains.kotlin.descriptors.Modality
@@ -39,15 +38,14 @@ class ReevaToolsAnnotationTransformer(
     private val propertyKeySymbol = context.referenceClass(FqName("me.mattco.reeva.runtime.objects.PropertyKey"))!!
     private val jsValueSymbol = context.referenceClass(FqName("me.mattco.reeva.runtime.JSValue"))!!
     private val jsObjectSymbol = context.referenceClass(FqName("me.mattco.reeva.runtime.objects.JSObject"))!!
-    private val jsSymbolSymbol = context.referenceClass(FqName("me.mattco.reeva.runtime.primitives.JSSymbol"))!!
     private val realmCompanionSymbol = context.referenceClass(FqName("me.mattco.reeva.core.Realm"))!!.owner.companionObject() as IrClass
     private val listSymbol = context.referenceClass(FqName("kotlin.collections.List"))!!
     private val defineNativeFunctionSymbol = jsObjectSymbol.functions.first { it.owner.name == Name.identifier("defineNativeFunction") }
+    private val defineNativeAccessorSymbol = jsObjectSymbol.functions.first { it.owner.name == Name.identifier("defineNativeAccessor") }
+    private val defineNativePropertySymbol = jsObjectSymbol.functions.first { it.owner.name == Name.identifier("defineNativeProperty") }
 
     override fun lower(irFile: IrFile) {
         irFile.transformChildrenVoid()
-        println(ir2stringWhole(irFile))
-        println("\n\n===============")
     }
 
     override fun visitClassNew(declaration: IrClass): IrStatement {
@@ -74,6 +72,40 @@ class ReevaToolsAnnotationTransformer(
                     declaration.functionsWithAnnoName("JSMethod").forEach { (function, ann) ->
                         +buildDefineNativeFunctionCall(function, ann, funObject.dispatchReceiverParameter!!)
                     }
+
+                    val accessorFunctions = mutableMapOf<String, NativelyAnnotatedFunctions>()
+                    declaration.functionsWithAnnoName("JSNativeAccessorGetter").forEach { (function, ann) ->
+                        accessorFunctions[verifyConstKind(ann.getValueArgument(0)!!)] =
+                            NativelyAnnotatedFunctions(AnnotatedFunction(function, ann), null)
+                    }
+                    declaration.functionsWithAnnoName("JSNativeAccessorSetter").forEach { (function, ann) ->
+                        accessorFunctions.getOrPut(verifyConstKind(ann.getValueArgument(0)!!)) {
+                            NativelyAnnotatedFunctions(null, null)
+                        }.also {
+                            it.setter = AnnotatedFunction(function, ann)
+                        }
+                    }
+
+                    val propertyFunctions = mutableMapOf<String, NativelyAnnotatedFunctions>()
+                    declaration.functionsWithAnnoName("JSNativePropertyGetter").forEach { (function, ann) ->
+                        propertyFunctions[verifyConstKind(ann.getValueArgument(0)!!)] =
+                            NativelyAnnotatedFunctions(AnnotatedFunction(function, ann), null)
+                    }
+                    declaration.functionsWithAnnoName("JSNativePropertySetter").forEach { (function, ann) ->
+                        propertyFunctions.getOrPut(verifyConstKind(ann.getValueArgument(0)!!)) {
+                            NativelyAnnotatedFunctions(null, null)
+                        }.also {
+                            it.setter = AnnotatedFunction(function, ann)
+                        }
+                    }
+
+                    accessorFunctions.forEach { (_, functions) ->
+                        +buildDefineNativeGetterSetterCall(functions, funObject.dispatchReceiverParameter!!, false)
+                    }
+
+                    propertyFunctions.forEach { (_, functions) ->
+                        +buildDefineNativeGetterSetterCall(functions, funObject.dispatchReceiverParameter!!, true)
+                    }
                 }
             }
         }
@@ -88,20 +120,49 @@ class ReevaToolsAnnotationTransformer(
             it to ann
         }
 
+    /**
+     * Asserts that an IrExpression is an instance of IrConst<T>,
+     * and returns the value of that constant
+     */
+    private inline fun <reified T> verifyConstKind(expr: IrExpression): T {
+        if (expr !is IrConst<*>)
+            TODO()
+        val value = expr.value
+        if (value !is T)
+            TODO()
+        return value
+    }
+
+    /**
+     * Given a block of code that looks like the following:
+     *
+     *     @JSMethod("methodName", 2, Descriptor.CONFIGURABLE)
+     *     fun methodName(thisValue: JSValue, arguments: List<JSValue>): JSValue {
+     *         // ...
+     *     }
+     *
+     * ...this function adds the following code to the object's annotationInit method:
+     *
+     *     defineNativeMethod(PropertyKey("methodName"), 2, Descriptor.CONFIGURABLE, ::methodName)
+     *
+     * If the method name argument of the @JSMethod annotation begins with "@@", this function
+     * will instead generate the following code:
+     *
+     *     defineNativeMethod(PropertyKey(Realm.`@@methodName`), 2, Descriptor.CONFIGURABLE, ::methodName)
+     */
     private fun IrBuilderWithScope.buildDefineNativeFunctionCall(
         targetFunction: IrSimpleFunction,
         ann: IrConstructorCall,
         dispatchReceiverParameter: IrValueParameter
     ) = irCall(
         defineNativeFunctionSymbol,
-        context.irBuiltIns.unitType
+        context.irBuiltIns.unitType,
     ).apply {
         dispatchReceiver = irGet(dispatchReceiverParameter)
 
         putValueArgument(0, getPropertyKeyTarget(ann.getValueArgument(0)!!))
         putValueArgument(1, ann.getValueArgument(1))
         putValueArgument(2, ann.getValueArgument(2) ?: irInt(0b111111))
-
         putValueArgument(3, IrFunctionReferenceImpl(
             UNDEFINED_OFFSET, UNDEFINED_OFFSET,
             context.irBuiltIns.kFunction(2).createType(false, listOf(
@@ -126,11 +187,96 @@ class ReevaToolsAnnotationTransformer(
         })
     }
 
-    private fun IrBuilderWithScope.getPropertyKeyTarget(input: IrExpression): IrExpression {
-        if (input !is IrConst<*> || input.kind != IrConstKind.String)
-            TODO()
+    /**
+     * Given a block of code that looks like the following:
+     *
+     *     @JSNativeAccessorGetter("propertyName", Descriptor.CONFIGURABLE)
+     *     fun getPropertyName(thisValue: JSValue): JSValue {
+     *         // ...
+     *     }
+     *
+     *     @JSNativeAccessorSetter("propertyName", Descriptor.CONFIGURABLE)
+     *     fun setPropertyName(thisValue: JSValue, newValue: JSValue) {
+     *         // ...
+     *     }
+     *
+     *
+     * ...this function adds the following code to the object's annotationInit method:
+     *
+     *     defineNativeAccessor(PropertyKey("propertyName"), Descriptor.CONFIGURABLE, ::getPropertyName, ::setPropertyName)
+     *
+     * If the method name argument of the @JSMethod annotation begins with "@@", this function
+     * will instead generate the following code:
+     *
+     *     defineNativeAccessor(PropertyKey(Realm.`@@propertyName`), Descriptor.CONFIGURABLE, ::getPropertyName, ::setPropertyName)
+     *
+     * If there is only a getter or setter, that function will be passed to the defineNativeAccessor
+     * method along with "null" for the setter or getter, respectively.
+     *
+     * This method also generates code for the @JSNativeProperty{Getter,Setter} annotations,
+     * which follow the same rules as the above explanation, but with the function that is
+     * called being "defineNativeProperty" instead of "defineNativeAccessor"
+     */
+    private fun IrBuilderWithScope.buildDefineNativeGetterSetterCall(
+        functions: NativelyAnnotatedFunctions,
+        dispatchReceiverParameter: IrValueParameter,
+        isProperty: Boolean,
+    ) = irCall(
+        if (isProperty) defineNativePropertySymbol else defineNativeAccessorSymbol,
+        context.irBuiltIns.unitType,
+    ).apply {
+        dispatchReceiver = irGet(dispatchReceiverParameter)
 
-        val name = input.value as String
+        val (getterPair, setterPair) = functions
+
+        putValueArgument(0, getPropertyKeyTarget((getterPair ?: setterPair)!!.anno.getValueArgument(0)!!))
+        // TODO: Verify attributes are the same?
+        putValueArgument(1, (getterPair ?: setterPair)!!.anno.getValueArgument(1) ?: irInt(0b111111))
+
+        putValueArgument(2, getterPair?.function?.let {
+            IrFunctionReferenceImpl(
+                UNDEFINED_OFFSET, UNDEFINED_OFFSET,
+                context.irBuiltIns.kFunction(1).createType(false, listOf(
+                    makeTypeProjection(jsValueSymbol.defaultType, Variance.INVARIANT),
+                    makeTypeProjection(jsValueSymbol.defaultType, Variance.INVARIANT)
+                )),
+                it.symbol,
+                typeArgumentsCount = 0,
+                reflectionTarget = null,
+                origin = IrStatementOrigin.ADAPTED_FUNCTION_REFERENCE
+            ).apply {
+                this.dispatchReceiver = irGet(dispatchReceiverParameter)
+            }
+        } ?: irNull())
+        putValueArgument(3, setterPair?.function?.let {
+            IrFunctionReferenceImpl(
+                UNDEFINED_OFFSET, UNDEFINED_OFFSET,
+                context.irBuiltIns.kFunction(2).createType(false, listOf(
+                    makeTypeProjection(jsValueSymbol.defaultType, Variance.INVARIANT),
+                    makeTypeProjection(jsValueSymbol.defaultType, Variance.INVARIANT),
+                    makeTypeProjection(context.irBuiltIns.unitType, Variance.INVARIANT),
+                )),
+                it.symbol,
+                typeArgumentsCount = 0,
+                reflectionTarget = null,
+                origin = IrStatementOrigin.ADAPTED_FUNCTION_REFERENCE
+            ).apply {
+                this.dispatchReceiver = irGet(dispatchReceiverParameter)
+            }
+        } ?: irNull())
+    }
+
+    /**
+     * Maps a IrExpression which is a IrConst<String> into either
+     * itself (if it represents a normal string property name), or
+     * a reference to a Realm property (if it starts with "@@")
+     *
+     * Examples, using Kotlin syntax instead of IrExpression objects:
+     *     getPropertyKeyTarget("myProperty") => "myProperty"
+     *     getPropertyKeyTarget("@@myProperty") => Realm.`@@myProperty`
+     */
+    private fun IrBuilderWithScope.getPropertyKeyTarget(input: IrExpression): IrExpression {
+        val name = verifyConstKind<String>(input)
         var isSymbol = false
         val expr = if (name.startsWith("@@")) {
             val symbolProperty = realmCompanionSymbol.properties.firstOrNull {
@@ -150,4 +296,14 @@ class ReevaToolsAnnotationTransformer(
             putValueArgument(0, expr)
         }
     }
+
+    data class AnnotatedFunction(
+        val function: IrSimpleFunction,
+        val anno: IrConstructorCall
+    )
+
+    data class NativelyAnnotatedFunctions(
+        var getter: AnnotatedFunction?,
+        var setter: AnnotatedFunction?,
+    )
 }
