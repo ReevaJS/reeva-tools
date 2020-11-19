@@ -49,6 +49,20 @@ class ReevaToolsAnnotationTransformer(
     }
 
     override fun visitClassNew(declaration: IrClass): IrStatement {
+        if (!declaration.isSubclassOf(jsObjectSymbol.owner)) {
+            val hasAnnotations = declaration.functions.any { func ->
+                func.annotations.mapNotNull { it.type.getClass()?.name?.identifier }.any {
+                    it == "JSMethod" || it == "JSNativePropertyGetter" || it == "JSNativePropertySetter" ||
+                        it == "JSNativeAccessorGetter" || it == "JSNativeAccessorSetter"
+                }
+            }
+
+            if (hasAnnotations) {
+                throw ReevaCompilerPluginException("Reeva object annotations are only valid in subclasses of " +
+                    "JSObject, but they are present in class ${declaration.name.identifier}")
+            }
+        }
+
         val funObject = buildFun {
             name = Name.identifier("annotationInit")
             returnType = context.irBuiltIns.unitType
@@ -126,10 +140,10 @@ class ReevaToolsAnnotationTransformer(
      */
     private inline fun <reified T> verifyConstKind(expr: IrExpression): T {
         if (expr !is IrConst<*>)
-            TODO()
+            throw ReevaCompilerPluginException("Expected IrConst<${T::class}>, got ${expr.dump(normalizeNames = true)}")
         val value = expr.value
         if (value !is T)
-            TODO()
+            throw ReevaCompilerPluginException("Expected IrConst<${T::class}>, got ${expr.dump(normalizeNames = true)}")
         return value
     }
 
@@ -281,7 +295,7 @@ class ReevaToolsAnnotationTransformer(
         val expr = if (name.startsWith("@@")) {
             val symbolProperty = realmCompanionSymbol.properties.firstOrNull {
                 it.name.identifier == name
-            } ?: TODO()
+            } ?: throw ReevaCompilerPluginException("Unable to find a static symbol property on Realm with name $name")
             isSymbol = true
             irGet(symbolProperty.getter!!.returnType, irGetObject(realmCompanionSymbol.symbol), symbolProperty.getter!!.symbol)
         } else input

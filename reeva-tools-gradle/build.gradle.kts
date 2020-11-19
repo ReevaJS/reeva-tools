@@ -1,20 +1,19 @@
 import org.jetbrains.kotlin.gradle.tasks.KotlinCompile
+import java.net.URI
 
 plugins {
     id("java-gradle-plugin")
     kotlin("jvm")
 
-    id("com.gradle.plugin-publish")
+    id("maven-publish")
 }
 
 dependencies {
     implementation(kotlin("gradle-plugin-api"))
 }
 
-pluginBundle {
-    website = "https://github.com/mattco98/ReevaTools"
-    vcsUrl = "https://github.com/mattco98/ReevaTools.git"
-    tags = listOf("kotlin", "elementa")
+tasks.withType<KotlinCompile> {
+    kotlinOptions.jvmTarget = "1.8"
 }
 
 gradlePlugin {
@@ -23,15 +22,21 @@ gradlePlugin {
             id = "me.mattco.reeva-tools"
             displayName = "Reeva Tools Plugin"
             description = "Kotlin Compiler Plugin for use in the Reeva JS Engine"
-            implementationClass = "me.mattco.reevatools.ElementaToolsGradlePlugin"
+            implementationClass = "me.mattco.reevatools.ReevaToolsGradlePlugin"
         }
     }
 }
 
-tasks.withType<KotlinCompile> {
-    kotlinOptions.jvmTarget = "1.8"
-}
+publishing {
+    repositories {
+        maven {
+            name = "nexus"
+            url = URI("https://repo.sk1er.club/repository/maven-releases/")
 
-tasks.register("publish") {
-    dependsOn("publishPlugins")
+            credentials {
+                username = project.findProperty("nexus_user") as String
+                password = project.findProperty("nexus_password") as String
+            }
+        }
+    }
 }
