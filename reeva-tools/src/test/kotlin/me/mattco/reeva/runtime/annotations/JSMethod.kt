@@ -5,5 +5,5 @@ package me.mattco.reeva.runtime.annotations
 annotation class JSMethod(
     val name: String,
     val length: Int,
-    val attributes: Int = 0
+    val attributes: String = "CeW"
 )

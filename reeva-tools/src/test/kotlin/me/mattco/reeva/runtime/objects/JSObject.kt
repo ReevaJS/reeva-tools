@@ -31,6 +31,6 @@ open class JSObject() : JSValue() {
     }
 
     companion object {
-        const val ATTRIBUTE = 5
+        const val ATTRIBUTE = "cew"
     }
 }

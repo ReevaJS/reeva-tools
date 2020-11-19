@@ -20,12 +20,12 @@ class CompilerTest {
             import me.mattco.reeva.runtime.objects.PropertyKey
 
             class JSThing : JSObject() {
-                @JSMethod("toStringTag", 3, 6)
+                @JSMethod("toStringTag", 3, "CeW")
                 fun jsMethodWithStrName(thisValue: JSValue, args: List<JSValue>): JSValue {
                     return this
                 }
 
-                @JSMethod("@@toStringTag", 3, 6)
+                @JSMethod("@@toStringTag", 3)
                 fun jsMethodWithSymbolName(thisValue: JSValue, args: List<JSValue>): JSValue {
                     return this
                 }
@@ -49,21 +49,21 @@ class CompilerTest {
             import me.mattco.reeva.runtime.objects.PropertyKey
 
             class JSThing : JSObject() {
-                @JSNativePropertyGetter("length", 10)
+                @JSNativePropertyGetter("length", "E")
                 fun getLength(thisValue: JSValue): JSValue {
                     return this
                 }
 
-                @JSNativePropertySetter("length", 4)
+                @JSNativePropertySetter("length", "cew")
                 fun setLength(thisValue: JSValue, newValue: JSValue) {
 
                 }
-                @JSNativePropertyGetter("@@toStringTag", 10)
+                @JSNativePropertyGetter("@@toStringTag", "E")
                 fun `get@@toStringTag`(thisValue: JSValue): JSValue {
                     return this
                 }
 
-                @JSNativePropertySetter("@@toStringTag", 4)
+                @JSNativePropertySetter("@@toStringTag", "cew")
                 fun `set@@toStringTag`(thisValue: JSValue, newValue: JSValue) {
 
                 }
@@ -87,22 +87,22 @@ class CompilerTest {
             import me.mattco.reeva.runtime.objects.PropertyKey
 
             class JSThing : JSObject() {
-                @JSNativeAccessorGetter("length", 10)
+                @JSNativeAccessorGetter("length", "E")
                 fun getLength(thisValue: JSValue): JSValue {
                     return this
                 }
 
-                @JSNativeAccessorSetter("length", 4)
+                @JSNativeAccessorSetter("length", "cew")
                 fun setLength(thisValue: JSValue, newValue: JSValue) {
 
                 }
 
-                @JSNativeAccessorGetter("@@toStringTag", 10)
+                @JSNativeAccessorGetter("@@toStringTag", "E")
                 fun `get@@toStringTag`(thisValue: JSValue): JSValue {
                     return this
                 }
 
-                @JSNativeAccessorSetter("@@toStringTag", 4)
+                @JSNativeAccessorSetter("@@toStringTag", "cew")
                 fun `set@@toStringTag`(thisValue: JSValue, newValue: JSValue) {
 
                 }

@@ -7,6 +7,7 @@ import org.jetbrains.kotlin.backend.common.lower.DeclarationIrBuilder
 import org.jetbrains.kotlin.backend.common.lower.at
 import org.jetbrains.kotlin.descriptors.Modality
 import org.jetbrains.kotlin.descriptors.annotations.Annotations
+import org.jetbrains.kotlin.fir.expressions.builder.buildUnitExpression
 import org.jetbrains.kotlin.ir.IrStatement
 import org.jetbrains.kotlin.ir.UNDEFINED_OFFSET
 import org.jetbrains.kotlin.ir.builders.*
@@ -35,6 +36,8 @@ import org.jetbrains.kotlin.types.typeUtil.asTypeProjection
 class ReevaToolsAnnotationTransformer(
     private val context: IrPluginContext
 ) : IrElementTransformerVoidWithContext(), FileLoweringPass {
+    private val attributeCache = mutableMapOf<String, Int>()
+
     private val propertyKeySymbol = context.referenceClass(FqName("me.mattco.reeva.runtime.objects.PropertyKey"))!!
     private val jsValueSymbol = context.referenceClass(FqName("me.mattco.reeva.runtime.JSValue"))!!
     private val jsObjectSymbol = context.referenceClass(FqName("me.mattco.reeva.runtime.objects.JSObject"))!!
@@ -176,7 +179,10 @@ class ReevaToolsAnnotationTransformer(
 
         putValueArgument(0, getPropertyKeyTarget(ann.getValueArgument(0)!!))
         putValueArgument(1, ann.getValueArgument(1))
-        putValueArgument(2, ann.getValueArgument(2) ?: irInt(0b111111))
+        val attrs = ann.getValueArgument(2)?.let {
+            makeAttributes(verifyConstKind(it))
+        } ?: irInt(0b111101)
+        putValueArgument(2, attrs)
         putValueArgument(3, IrFunctionReferenceImpl(
             UNDEFINED_OFFSET, UNDEFINED_OFFSET,
             context.irBuiltIns.kFunction(2).createType(false, listOf(
@@ -245,7 +251,10 @@ class ReevaToolsAnnotationTransformer(
 
         putValueArgument(0, getPropertyKeyTarget((getterPair ?: setterPair)!!.anno.getValueArgument(0)!!))
         // TODO: Verify attributes are the same?
-        putValueArgument(1, (getterPair ?: setterPair)!!.anno.getValueArgument(1) ?: irInt(0b111111))
+        val attrs = (getterPair ?: setterPair)!!.anno.getValueArgument(1)?.let {
+            makeAttributes(verifyConstKind(it))
+        } ?: irInt(0b111101)
+        putValueArgument(1, attrs)
 
         putValueArgument(2, getterPair?.function?.let {
             IrFunctionReferenceImpl(
@@ -309,6 +318,42 @@ class ReevaToolsAnnotationTransformer(
         return irCallConstructor(ctor, listOf()).apply {
             putValueArgument(0, expr)
         }
+    }
+
+    private fun IrBuilderWithScope.makeAttributes(attrs: String): IrExpression {
+        return attributeCache.getOrPut(attrs) {
+            validateAttributes(attrs)
+
+            // TODO: Don't hardcode constants?
+            var attr = 0
+
+            attrs.forEach {
+                attr = attr or (when (it) {
+                    'C' -> (1 shl 0) or (1 shl 3)
+                    'E' -> (1 shl 1) or (1 shl 4)
+                    'W' -> (1 shl 2) or (1 shl 5)
+                    'c' -> 1 shl 3
+                    'e' -> 1 shl 4
+                    'w' -> 1 shl 5
+                    else -> throw Error()
+                })
+            }
+
+            attr
+        }.let(::irInt)
+    }
+
+    private fun validateAttributes(attrs: String) {
+        if (attrs.isEmpty() || attrs.length > 3)
+            throw ReevaCompilerPluginException("Annotation attributes must be a string of length 1..3")
+        if ('c' in attrs && 'C' in attrs)
+            throw ReevaCompilerPluginException("Annotation attributes cannot specify 'c' and 'C'")
+        if ('e' in attrs && 'E' in attrs)
+            throw ReevaCompilerPluginException("Annotation attributes cannot specify 'e' and 'E'")
+        if ('w' in attrs && 'W' in attrs)
+            throw ReevaCompilerPluginException("Annotation attributes cannot specify 'w' and 'W'")
+        if (attrs.any { it !in listOf('c', 'C', 'e', 'E', 'w', 'W') })
+            throw ReevaCompilerPluginException("Annotation attributes cannot contain characters that are not 'c', 'C', 'e', 'E', 'w', or 'W'")
     }
 
     data class AnnotatedFunction(
