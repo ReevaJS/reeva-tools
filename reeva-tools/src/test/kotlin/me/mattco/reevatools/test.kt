@@ -18,19 +18,19 @@ class CompilerTest {
             import me.mattco.reeva.runtime.objects.JSObject
             import me.mattco.reeva.runtime.JSValue
             import me.mattco.reeva.runtime.objects.PropertyKey
-            
+
             class JSThing : JSObject() {
                 @JSMethod("toStringTag", 3, 6)
-                fun jsMethodWithStrName(thisValue: JSValue, args: List<JSValue>): JSValue { 
-                    return this 
+                fun jsMethodWithStrName(thisValue: JSValue, args: List<JSValue>): JSValue {
+                    return this
                 }
-                
+
                 @JSMethod("@@toStringTag", 3, 6)
-                fun jsMethodWithSymbolName(thisValue: JSValue, args: List<JSValue>): JSValue { 
-                    return this 
+                fun jsMethodWithSymbolName(thisValue: JSValue, args: List<JSValue>): JSValue {
+                    return this
                 }
             }
-            
+
             fun main() {
                 JSThing().annotationInit()
             }
@@ -47,28 +47,28 @@ class CompilerTest {
             import me.mattco.reeva.runtime.objects.JSObject
             import me.mattco.reeva.runtime.JSValue
             import me.mattco.reeva.runtime.objects.PropertyKey
-            
+
             class JSThing : JSObject() {
                 @JSNativePropertyGetter("length", 10)
                 fun getLength(thisValue: JSValue): JSValue {
                     return this
                 }
-                
+
                 @JSNativePropertySetter("length", 4)
                 fun setLength(thisValue: JSValue, newValue: JSValue) {
-                    
+
                 }
                 @JSNativePropertyGetter("@@toStringTag", 10)
                 fun `get@@toStringTag`(thisValue: JSValue): JSValue {
                     return this
                 }
-                
+
                 @JSNativePropertySetter("@@toStringTag", 4)
                 fun `set@@toStringTag`(thisValue: JSValue, newValue: JSValue) {
-                    
+
                 }
             }
-            
+
             fun main() {
                 JSThing().annotationInit()
             }
@@ -85,29 +85,29 @@ class CompilerTest {
             import me.mattco.reeva.runtime.objects.JSObject
             import me.mattco.reeva.runtime.JSValue
             import me.mattco.reeva.runtime.objects.PropertyKey
-            
+
             class JSThing : JSObject() {
                 @JSNativeAccessorGetter("length", 10)
                 fun getLength(thisValue: JSValue): JSValue {
                     return this
                 }
-                
+
                 @JSNativeAccessorSetter("length", 4)
                 fun setLength(thisValue: JSValue, newValue: JSValue) {
-                    
+
                 }
-                
+
                 @JSNativeAccessorGetter("@@toStringTag", 10)
                 fun `get@@toStringTag`(thisValue: JSValue): JSValue {
                     return this
                 }
-                
+
                 @JSNativeAccessorSetter("@@toStringTag", 4)
                 fun `set@@toStringTag`(thisValue: JSValue, newValue: JSValue) {
-                    
-                }       
+
+                }
             }
-            
+
             fun main() {
                 JSThing().annotationInit()
             }
@@ -127,34 +127,34 @@ class CompilerTest {
             import me.mattco.reeva.runtime.objects.JSObject
             import me.mattco.reeva.runtime.JSValue
             import me.mattco.reeva.runtime.objects.PropertyKey
-            
+
             class JSThing : JSObject() {
                 @JSMethod("a", 3, JSObject.ATTRIBUTE)
-                fun jsMethodWithStrName(thisValue: JSValue, args: List<JSValue>): JSValue { 
-                    return this 
+                fun jsMethodWithStrName(thisValue: JSValue, args: List<JSValue>): JSValue {
+                    return this
                 }
-                
+
                 @JSNativePropertyGetter("b", JSObject.ATTRIBUTE)
                 fun getB(thisValue: JSValue): JSValue {
                     return this
                 }
-                
+
                 @JSNativePropertySetter("b", JSObject.ATTRIBUTE)
                 fun setB(thisValue: JSValue, newValue: JSValue) {
-                    
+
                 }
-                
+
                 @JSNativeAccessorGetter("c", JSObject.ATTRIBUTE)
                 fun getC(thisValue: JSValue): JSValue {
                     return this
                 }
-                
+
                 @JSNativeAccessorSetter("c", JSObject.ATTRIBUTE)
                 fun setC(thisValue: JSValue, newValue: JSValue) {
-                    
-                }   
+
+                }
             }
-            
+
             fun main() {
                 JSThing().annotationInit()
             }

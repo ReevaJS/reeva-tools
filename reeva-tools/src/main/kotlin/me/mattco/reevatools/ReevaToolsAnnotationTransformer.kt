@@ -128,7 +128,7 @@ class ReevaToolsAnnotationTransformer(
     }
 
     private fun IrClass.functionsWithAnnoName(name: String): Sequence<Pair<IrSimpleFunction, IrConstructorCall>> =
-        functions.mapNotNull {
+        functions.filterNot { it.isFakeOverride }.mapNotNull {
             val ann = it.annotations.firstOrNull { ann -> ann.type.getClass()?.name?.equals(Name.identifier(name)) == true }
                 ?: return@mapNotNull null
             it to ann
